@@ -264,6 +264,9 @@ export class Renderer {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.sprites.clear();
     this.makeStars();
+    // Sprites are pixel-bound to the previous size: rebuild them for the new
+    // radius and pixel ratio, otherwise bubbles are drawn at the old scale.
+    if (this.layout) this.ensureSprites();
   }
 
   makeStars() {
@@ -319,7 +322,7 @@ export class Renderer {
     const g = canvas.getContext('2d');
     g.scale(this.dpr, this.dpr);
     paintSphere(g, R + pad, R + pad, R, color);
-    return { canvas, pad, size: cssSize };
+    return { canvas, pad, size: cssSize, radius: R };
   }
 
   makeRainbowSprite() {
@@ -332,7 +335,7 @@ export class Renderer {
     const g = canvas.getContext('2d');
     g.scale(this.dpr, this.dpr);
     paintRainbow(g, R + pad, R + pad, R);
-    return { canvas, pad, size: cssSize };
+    return { canvas, pad, size: cssSize, radius: R };
   }
 
   spriteFor(colorId) {
@@ -344,7 +347,8 @@ export class Renderer {
     const sprite = this.spriteFor(colorId);
     if (!sprite) return;
     const ctx = this.ctx;
-    const factor = (radius * scale) / this.layout.radius;
+    const base = sprite.radius || this.layout.radius;
+    const factor = (radius * scale) / base;
     const drawSize = sprite.size * factor;
     ctx.save();
     if (alpha !== 1) ctx.globalAlpha = clamp(alpha, 0, 1);

@@ -3,6 +3,7 @@
  * selection. No DOM, no rendering.
  */
 import { COLS, TUNING } from './config.js';
+import { ROW_WIDTH } from './grid.js';
 
 export function cellCenter(layout, r, c) {
   return { x: layout.cellX(r, c), y: layout.cellY(r) };
@@ -92,8 +93,13 @@ export function findSnapCell(grid, layout, contact, hitCell, options = {}) {
   }
 
   if (!candidates.length) {
-    for (let r = 0; r < grid.rows.length; r += 1) {
-      for (let c = 0; c < grid.rows[r].length; c += 1) {
+    // Walk up to the row budget of the current layout, not just the rows the
+    // grid happens to hold: after a resize the board is deeper than the array
+    // that was allocated when the level started.
+    const rowBudget = Math.max(grid.rows.length, layout.maxRows || 0);
+    for (let r = 0; r < rowBudget; r += 1) {
+      const width = grid.rows[r] ? grid.rows[r].length : ROW_WIDTH(r);
+      for (let c = 0; c < width; c += 1) {
         if (grid.get(r, c)) continue;
         if (grid.hasOccupiedNeighbor(r, c)) candidates.push({ r, c });
       }
@@ -164,7 +170,12 @@ export function traceShot(grid, layout, start, angle, options = {}) {
     };
   };
 
-  const collisionRadius = Math.max(4, (R - TUNING.collisionInset) * 2);
+  // Each bubble is shrunk by a small inset so a shot can slip through narrow
+  // gaps. The inset grows with the bubble: a fixed 4 px is a different
+  // percentage of a 22 px mobile bubble and of a 34 px desktop one, and the
+  // shot mysteriously stopped squeezing through gaps on big screens.
+  const inset = Math.max(TUNING.collisionInset, R * 0.18);
+  const collisionRadius = Math.max(4, (R - inset) * 2);
 
   for (let i = 0; i < maxSteps; i += 1) {
     let nx = x + dx * step;

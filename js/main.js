@@ -101,14 +101,16 @@ function resizeStage() {
   const rect = stage.getBoundingClientRect();
   if (!rect.width || !rect.height) return;
   renderer.resize(rect.width, rect.height);
-  if (game) {
-    layout = createLayout(rect.width, rect.height, game.level.rows.length);
-    game.layout = layout;
-    renderer.layout = layout;
-    renderer.sprites.clear();
-    renderer.ensureSprites();
-    refreshAim();
-  }
+  if (!game) return;
+  layout = createLayout(rect.width, rect.height, game.level.rows.length);
+  game.layout = layout;
+  renderer.layout = layout;
+  // The board may now have room for more rows (window got bigger, or the
+  // player opened fullscreen): let the grid grow before anything is drawn.
+  game.grid.ensureCapacity(layout.maxRows);
+  renderer.sprites.clear();
+  renderer.ensureSprites();
+  refreshAim();
 }
 
 function queueResize() {
@@ -906,6 +908,11 @@ document.getElementById('confirmResetNo').addEventListener('click', () => {
 
 window.addEventListener('resize', queueResize);
 window.addEventListener('orientationchange', () => setTimeout(resizeStage, 250));
+// The platform resizes the player (fullscreen, wide screen) through the
+// container, and the transition can end without a window resize event.
+if (typeof ResizeObserver !== 'undefined') {
+  new ResizeObserver(() => queueResize()).observe(stage);
+}
 
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {

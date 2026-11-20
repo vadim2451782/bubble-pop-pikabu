@@ -97,6 +97,21 @@ export class BubbleGrid {
     }
   }
 
+  /**
+   * Grow the grid to a new row budget. The board is allocated once, from the
+   * layout that existed when the level started; after the player resizes the
+   * window (or enters fullscreen) the layout allows more rows, and without
+   * this the stack simply cannot descend any further — the level then never
+   * reaches the danger line and never ends.
+   */
+  ensureCapacity(count) {
+    const want = Math.max(1, Math.round(Number(count) || 0));
+    while (this.rows.length < want) {
+      this.rows.push(new Array(ROW_WIDTH(this.rows.length)).fill(null));
+    }
+    return this.rows.length;
+  }
+
   inBounds(r, c) {
     return r >= 0 && r < this.rows.length && c >= 0 && c < this.rows[r].length;
   }
