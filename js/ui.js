@@ -421,7 +421,7 @@ export class UI {
     });
   }
 
-  showLose({ game, reason }) {
+  showLose({ game, reason, coins = 0 }) {
     this.syncHud(game);
     const overflow = reason === 'overflow';
     this.el.loseTitle.textContent = overflow ? 'Поле переполнено' : 'Ходы закончились';
@@ -429,7 +429,7 @@ export class UI {
       ? 'Шарики коснулись нижней границы. Попробуйте другой маршрут — или возьмите бустер.'
       : 'Шарики остались на поле. Попробуйте ещё раз — или возьмите бустер.';
     this.el.loseScore.textContent = String(game.score);
-    this.el.loseCoins.textContent = `+${game.coinsEarned}`;
+    this.el.loseCoins.textContent = `+${coins}`;
     this.el.loseLeft.textContent = String(game.grid.count());
     this.showScreen('lose');
   }

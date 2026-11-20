@@ -69,6 +69,17 @@ export const SCORE = {
 /** How many bubbles must be cleared to earn one coin. */
 export const BUBBLES_PER_COIN = 4;
 
+/**
+ * Level payouts. What the level earned while it was played (one coin per four
+ * bubbles plus the win bonus) is divided before it reaches the wallet:
+ * a won level pays 1/2.2, a lost one pays 1/3. Everything is rounded down.
+ * Shop prices, booster costs and other rewards are not affected.
+ */
+export const REWARD = {
+  winDivisor: 2.2,
+  loseDivisor: 3,
+};
+
 export const START_COINS = 50;
 export const START_BOOSTERS = { bomb: 1, lightning: 1, rainbow: 1, rocket: 1 };
 

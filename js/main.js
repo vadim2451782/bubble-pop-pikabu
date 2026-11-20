@@ -2,7 +2,7 @@
  * Application controller: boots the game, wires DOM input, animation loop,
  * screen transitions, boosters, audio and PWA registration.
  */
-import { BOOSTERS, BOOSTER_ORDER, RAINBOW, SCORE, TUNING } from './config.js';
+import { BOOSTERS, BOOSTER_ORDER, RAINBOW, REWARD, SCORE, TUNING } from './config.js';
 import { getLevel, getNextLevel, LEVELS } from './levels.js';
 import { createLayout } from './layout.js';
 import { Game } from './game.js';
@@ -265,9 +265,11 @@ function handleShotResult(result, trace) {
     renderer.addFloater(average.x, average.y, `+${result.falling.length * SCORE.falling}`, '#a9e0ff');
   }
 
+  // Coins are no longer credited shot by shot: the level pays out once, when
+  // its outcome is known (see settleLevelReward), so the coin chip and the
+  // result screen always agree with the wallet.
   if (result.coinsGain) {
-    store.addCoins(result.coinsGain);
-    ui.setCoins(store.coins);
+    ui.setCoins(store.coins, { bump: false });
   }
   ui.syncHud(game);
   refreshAim();
@@ -285,14 +287,37 @@ function scheduleResult() {
   }
 }
 
+/**
+ * Pays the level out exactly once.
+ *
+ * Raw reward = coins collected during the level (1 per 4 bubbles) plus the win
+ * bonus (10 + 5 per star). It is then cut down: a won level keeps 1/2.2, a lost
+ * one 1/3, rounded down. The guard on the game object makes the payout
+ * idempotent: reopening the result screen, returning from the shop or pressing
+ * "Заново" never credits the same level twice.
+ */
+function settleLevelReward(outcome) {
+  if (!game || game.rewardPaid !== undefined) return 0;
+  const collected = Math.max(0, game.coinsEarned || 0);
+  const stars = Math.max(1, game.stars || 1);
+  const bonus = outcome === 'win' ? SCORE.winBase + stars * SCORE.winPerStar : 0;
+  const raw = collected + bonus;
+  const divisor = outcome === 'win' ? REWARD.winDivisor : REWARD.loseDivisor;
+  const paid = Math.floor(raw / divisor);
+  game.rewardPaid = paid;
+  game.rewardRaw = raw;
+  if (paid > 0) store.addCoins(paid);
+  ui.setCoins(store.coins, { bump: paid > 0 });
+  return paid;
+}
+
 function finishWin() {
   if (!game || game.phase !== 'won' || resultScreenOpen) return;
   resultScreenOpen = true;
   paused = true;
   const level = game.level;
   const stars = Math.max(1, game.stars || 1);
-  const bonus = SCORE.winBase + stars * SCORE.winPerStar;
-  store.addCoins(bonus);
+  const paid = settleLevelReward('win');
   store.completeLevel(level.id, stars, game.score);
   ui.setCoins(store.coins);
   ui.renderAll();
@@ -301,7 +326,7 @@ function finishWin() {
   ui.showWin({
     game,
     stars,
-    coins: game.coinsEarned + bonus,
+    coins: paid,
     nextExists: !!next,
   });
   for (let i = 0; i < stars; i += 1) {
@@ -313,8 +338,9 @@ function finishLose() {
   if (!game || game.phase !== 'lost' || resultScreenOpen) return;
   resultScreenOpen = true;
   paused = true;
+  const paid = settleLevelReward('lose');
   audio.play('lose');
-  ui.showLose({ game, reason: game.loseReason });
+  ui.showLose({ game, reason: game.loseReason, coins: paid });
 }
 
 function pauseGame() {
@@ -339,6 +365,10 @@ function resumeGame() {
 function returnToMenu() {
   clearTimeout(resolveTimer);
   resolveTimer = 0;
+  // Leaving a level mid-way pays the same reduced reward as losing it, so the
+  // coins already collected are not silently thrown away. A settled level
+  // (win/lose screen was shown) pays nothing extra.
+  if (game) settleLevelReward(game.phase === 'won' ? 'win' : 'lose');
   resultScreenOpen = false;
   paused = false;
   game = null;
