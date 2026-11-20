@@ -2286,9 +2286,21 @@ svg.sprite {
   }
 }
 
-@media (orientation: landscape) and (max-height: 520px) {
+/* The rotation prompt is only for real phones held sideways: an embedded
+   player on a desktop has a wide and short window too, and must not be
+   blocked by it. */
+@media (orientation: landscape) and (max-height: 520px) and (pointer: coarse) {
   .rotate-overlay {
     display: flex;
+  }
+}
+
+/* Desktop and wide players: a board wide enough not to look like a phone. */
+@media (min-width: 900px) and (min-height: 620px) {
+  .hud,
+  .stage,
+  .dock {
+    max-width: 820px;
   }
 }
 

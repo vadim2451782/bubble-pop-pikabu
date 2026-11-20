@@ -19,7 +19,7 @@ export function createLayout(fieldWidth, fieldHeight, levelRows = 4) {
   const usable = height - shooterZone - top - radius * 2;
   const maxRadiusForHeight = usable / (Math.max(1, levelRows - 1) * rowHeightFactor + 2);
   radius = Math.min(radius, maxRadiusForHeight);
-  radius = Math.max(7, Math.min(27, radius));
+  radius = Math.max(7, Math.min(34, radius));
 
   const rowHeight = radius * rowHeightFactor;
   const shooterY = height - shooterZone * 0.56;
