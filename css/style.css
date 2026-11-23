@@ -1274,6 +1274,70 @@ svg.sprite {
   opacity: 0.72;
 }
 
+/* The next world is only a teaser: dimmed, blurred and unreadable. */
+.level-world.is-preview {
+  opacity: 0.55;
+  filter: saturate(0.55);
+}
+
+.level-world.is-preview .level-world__title h3,
+.level-world.is-preview .level-world__title small {
+  color: rgba(198, 221, 255, 0.62);
+}
+
+.level-world.is-preview .level-world__grid {
+  filter: blur(3px);
+  pointer-events: none;
+  user-select: none;
+}
+
+.level-tile--dim {
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 18px;
+  color: rgba(198, 221, 255, 0.5);
+  background: rgba(11, 28, 64, 0.55);
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  cursor: default;
+}
+
+.level-more {
+  display: block;
+  width: 100%;
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(20, 45, 96, 0.55);
+  color: #cfe0ff;
+  font: inherit;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.level-more:hover {
+  background: rgba(31, 66, 132, 0.7);
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+.modal-card--complete {
+  border-color: rgba(255, 219, 128, 0.35);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.13),
+    0 0 0 1px rgba(255, 219, 128, 0.1),
+    0 18px 40px rgba(0, 5, 24, 0.35);
+}
+
+.modal-card--complete h2 {
+  background: linear-gradient(180deg, #fff3b0, #ffd35c 45%, #ffab1f 80%, #ff8a00);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
 .level-world__head {
   display: flex;
   align-items: center;
@@ -1554,6 +1618,166 @@ svg.sprite {
   border: 1px solid rgba(126, 178, 255, 0.2);
   background: linear-gradient(180deg, rgba(28, 62, 130, 0.5), rgba(6, 20, 52, 0.7));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 6px 16px rgba(0, 5, 24, 0.22);
+}
+
+.coins-shop {
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto 10px;
+}
+
+.coins-shop h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: #9dbcE9;
+}
+
+.coins-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.coin-pack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 6px;
+  border: 1px solid rgba(255, 211, 92, 0.35);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 211, 92, 0.16), rgba(30, 60, 130, 0.45));
+  color: #ffe9a8;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.coin-pack b { font-size: 15px; }
+.coin-pack small { font-size: 11px; color: #cfe1ff; font-weight: 600; }
+.coin-pack:disabled { opacity: .45; cursor: default; }
+
+.shop-remove-ads {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(126, 178, 255, 0.4);
+  border-radius: 13px;
+  background: rgba(12, 34, 80, 0.6);
+  color: #dce9ff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.shop-remove-ads:disabled { opacity: .5; cursor: default; }
+
+.ad-banner {
+  width: 100%;
+  max-width: 560px;
+  height: 50px;
+  margin: 6px auto 0;
+  border-radius: 10px;
+  background: rgba(8, 22, 56, 0.5);
+}
+
+.ad-banner[hidden] { display: none; }
+
+.btn--ad {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(255, 211, 92, 0.45);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 211, 92, 0.22), rgba(30, 60, 130, 0.55));
+  color: #ffe9a8;
+  font: inherit;
+  font-weight: 800;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.btn--ad .icon { width: 14px; height: 14px; }
+.btn--ad[hidden] { display: none; }
+
+.shop-coins-ad {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto 10px;
+  padding: 11px 14px;
+  border: 1px solid rgba(126, 178, 255, 0.4);
+  border-radius: 15px;
+  background: linear-gradient(180deg, rgba(80, 140, 255, 0.32), rgba(24, 54, 128, 0.55));
+  color: #e3eeff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+}
+
+.shop-coins-ad .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.shop-coins-ad b {
+  color: #ffd968;
+}
+
+.shop-coins-ad:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.offline-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(4, 12, 34, 0.92);
+  backdrop-filter: blur(6px);
+}
+
+.offline-gate[hidden] {
+  display: none;
+}
+
+.offline-card {
+  width: min(92vw, 380px);
+  padding: 24px 20px;
+  border: 1px solid rgba(126, 178, 255, 0.32);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(28, 62, 130, 0.85), rgba(6, 20, 52, 0.95));
+  box-shadow: 0 24px 60px rgba(0, 5, 24, 0.55);
+  text-align: center;
+}
+
+.offline-card b {
+  display: block;
+  font-size: 17px;
+  color: #fff;
+}
+
+.offline-card p {
+  margin: 10px 0 18px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #a9c4ec;
 }
 
 .shop-item__actions {

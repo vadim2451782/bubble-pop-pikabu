@@ -2,7 +2,7 @@
  * Application controller: boots the game, wires DOM input, animation loop,
  * screen transitions, boosters, audio and PWA registration.
  */
-import { BOOSTERS, BOOSTER_ORDER, RAINBOW, REWARD, SCORE, TUNING } from './config.js';
+import { ADS_COIN_PACK, BOOSTERS, BOOSTER_ORDER, COIN_PACKS, LOSE_CONTINUE_SHOTS, MAX_LEVEL, RAINBOW, REMOVE_ADS_PRODUCT, REWARD, SCORE, TUNING } from './config.js';
 import { getLevel, getNextLevel, LEVELS } from './levels.js';
 import { createLayout } from './layout.js';
 import { Game } from './game.js';
@@ -11,6 +11,10 @@ import { Store } from './storage.js';
 import { AudioEngine } from './audio.js';
 import { UI } from './ui.js';
 import { platform } from './platform.js';
+import { ads } from './ads.js';
+import { iap } from './iap.js';
+import { net } from './net.js';
+import { vkplay } from './vkplay.js';
 import { bubbleAtPoint, clampAimAngle } from './physics.js';
 
 const QA = new URLSearchParams(window.location.search).has('qa');
@@ -154,6 +158,7 @@ function toggleMusic() {
 /* ------------------------------------------------------------------ level */
 
 function startLevel(id, { announce = true } = {}) {
+  ads.hideBanner();
   const level = getLevel(id);
   clearTimeout(resolveTimer);
   resolveTimer = 0;
@@ -322,6 +327,14 @@ function finishWin() {
   ui.setCoins(store.coins);
   ui.renderAll();
   audio.play('win');
+  if (level.id >= MAX_LEVEL) {
+    const totalStars = LEVELS.reduce((sum, item) => sum + store.getLevelRecord(item.id).stars, 0);
+    ui.showComplete({ stars: totalStars, coins: store.coins });
+    for (let i = 0; i < 3; i += 1) {
+      setTimeout(() => audio.play('star'), 420 + i * 240);
+    }
+    return;
+  }
   const next = getNextLevel(level.id);
   ui.showWin({
     game,
@@ -329,6 +342,7 @@ function finishWin() {
     coins: paid,
     nextExists: !!next,
   });
+  ads.maybeInterstitial();
   for (let i = 0; i < stars; i += 1) {
     setTimeout(() => audio.play('star'), 420 + i * 240);
   }
@@ -341,6 +355,40 @@ function finishLose() {
   const paid = settleLevelReward('lose');
   audio.play('lose');
   ui.showLose({ game, reason: game.loseReason, coins: paid });
+  ui.setContinueAdVisible(ads.rewardedSupported);
+  ads.maybeInterstitial();
+}
+
+/** "+5 шаров" after a loss: one rewarded view, applied once. */
+async function continueWithAd() {
+  if (!game || game.phase !== 'lost' || !ads.rewardedSupported) return;
+  const button = document.getElementById('btnContinueAd');
+  if (button) button.disabled = true;
+  const canShow = await ads.canShowRewarded();
+  if (!canShow) {
+    if (button) button.disabled = false;
+    ui.setContinueAdVisible(false);
+    ui.toast('Реклама сейчас недоступна');
+    return;
+  }
+  audio.pauseAll();
+  const result = await ads.showRewarded();
+  audio.resumeAll();
+  if (!result.reward) {
+    if (button) button.disabled = false;
+    ui.toast('Реклама не досмотрена — шары не начислены', 2600);
+    return;
+  }
+  game.shots += LOSE_CONTINUE_SHOTS;
+  game.phase = 'aim';
+  game.loseReason = null;
+  resultScreenOpen = false;
+  paused = false;
+  ui.setContinueAdVisible(false);
+  ui.showScreen(null);
+  ui.syncHud(game);
+  refreshAim();
+  ui.toast(`+${LOSE_CONTINUE_SHOTS} шаров`);
 }
 
 function pauseGame() {
@@ -363,6 +411,7 @@ function resumeGame() {
 }
 
 function returnToMenu() {
+  ads.hideBanner();
   clearTimeout(resolveTimer);
   resolveTimer = 0;
   // Leaving a level mid-way pays the same reduced reward as losing it, so the
@@ -384,6 +433,8 @@ function openLevels() {
   paused = true;
   ui.showScreen('levels');
   ui.renderLevels();
+  // The screen is visible now, so the map can scroll to the current level.
+  requestAnimationFrame(() => ui.scrollLevelsToCurrent());
   currentMetaBack = 'menu';
 }
 
@@ -396,9 +447,79 @@ function openShop(from = 'menu') {
   ui.renderShop();
   ui.setCoins(store.coins, { bump: false });
   refreshAds();
+  refreshStoreShop();
+  refreshVkPlayShop();
+  // The native rewarded ad may still be loading; check again in a moment.
+  setTimeout(() => refreshAds(), 4000);
+}
+
+/** Coin packs, "remove ads" and the banner: store builds only. */
+async function refreshStoreShop() {
+  if (!window.__STORE__) return;
+  if (!iap.ready) {
+    ui.renderCoinShop({});
+    ui.setBannerSlot(false);
+    return;
+  }
+  await iap.loadPrices();
+  ui.renderCoinShop({
+    packs: COIN_PACKS.map((pack) => ({ ...pack, price: iap.priceOf(pack.id, pack.price) })),
+    hasRemoveAds: store.hasRemoveAds,
+    removeAdsPrice: iap.priceOf(REMOVE_ADS_PRODUCT.id, REMOVE_ADS_PRODUCT.price),
+  });
+
+  if (ads.bannerSupported && !store.hasRemoveAds) {
+    ui.setBannerSlot(true);
+    const rect = ui.bannerRect();
+    const shown = rect ? await ads.showBanner(rect) : false;
+    if (!shown) ui.setBannerSlot(false);
+    return;
+  }
+  ui.setBannerSlot(false);
+  ads.hideBanner();
+}
+
+async function buyCoinsPack(productId) {
+  const pack = COIN_PACKS.find((item) => item.id === productId);
+  if (!pack || !iap.ready || iap.busy) return;
+  const result = await iap.buy(productId);
+  if (!result.ok) {
+    ui.toast(result.reason === 'CANCELLED' ? 'Покупка отменена' : 'Не удалось совершить покупку');
+    return;
+  }
+  const applied = store.grantPurchase(productId, result.purchaseId || String(Date.now()));
+  if (!applied) {
+    ui.toast('Эта покупка уже учтена');
+    return;
+  }
+  store.addCoins(pack.coins);
+  unlockAudio();
+  audio.play('buy');
+  ui.setCoins(store.coins);
+  ui.renderShop();
+  ui.renderMenu();
+  refreshStoreShop();
+  ui.toast(`+${pack.coins} монет`);
+}
+
+async function buyRemoveAds() {
+  if (!iap.ready || iap.busy || store.hasRemoveAds) return;
+  const result = await iap.buy(REMOVE_ADS_PRODUCT.id);
+  if (!result.ok) {
+    ui.toast(result.reason === 'CANCELLED' ? 'Покупка отменена' : 'Не удалось совершить покупку');
+    return;
+  }
+  store.grantPurchase(REMOVE_ADS_PRODUCT.id, result.purchaseId || '');
+  ads.setRemoveAds(true);
+  ui.setBannerSlot(false);
+  ui.renderShop();
+  ui.renderMenu();
+  refreshStoreShop();
+  ui.toast('Реклама отключена');
 }
 
 function backFromShop() {
+  ads.hideBanner();
   if (currentMetaBack === 'pause' && game) {
     ui.showScreen('pause');
     paused = true;
@@ -465,13 +586,13 @@ function buyBooster(id) {
 async function buyBoosterByAd(id) {
   const booster = BOOSTERS[id];
   if (!booster || ui.adsBusy) return;
-  if (!platform.rewardedSupported) {
+  if (!ads.rewardedSupported) {
     ui.toast('Реклама недоступна — купите за монеты');
     return;
   }
 
   ui.setAdsBusy(true);
-  const canShow = await platform.canShowRewarded();
+  const canShow = await ads.canShowRewarded();
   if (!canShow) {
     ui.setAdsBusy(false);
     ui.setAdsAvailable(false);
@@ -480,13 +601,12 @@ async function buyBoosterByAd(id) {
   }
 
   audio.pauseAll();
-  ui.setAdsBusy(true);
-  const result = await platform.showRewarded();
+  const result = await ads.showRewarded();
   audio.resumeAll();
   ui.setAdsBusy(false);
 
   if (!result.reward) {
-    console.warn('[pikabu] rewarded not completed:', result.reason || 'closed early');
+    console.warn('[ads] rewarded not completed:', result.reason || 'closed early');
     ui.toast('Реклама не досмотрена — награда не начислена', 2600);
     refreshAds();
     return;
@@ -503,15 +623,55 @@ async function buyBoosterByAd(id) {
   refreshAds();
 }
 
-/** Ask the platform whether the rewarded button may be shown right now. */
-async function refreshAds() {
-  if (!platform.enabled) return;
-  if (!platform.rewardedSupported) {
-    ui.setAdsAvailable(false);
+/** "+N монет за рекламу" — a new rewarded placement of the Play build. */
+async function buyCoinsByAd() {
+  if (ui.coinsAdBusy) return;
+  if (!ads.rewardedSupported) {
+    ui.setCoinsAdAvailable(false);
+    ui.toast('Реклама недоступна');
     return;
   }
-  const canShow = await platform.canShowRewarded();
+  ui.coinsAdBusy = true;
+  ui.setCoinsAdBusy(true);
+  const canShow = await ads.canShowRewarded();
+  if (!canShow) {
+    ui.coinsAdBusy = false;
+    ui.setCoinsAdBusy(false);
+    ui.setCoinsAdAvailable(false);
+    ui.toast('Реклама сейчас недоступна — попробуйте позже');
+    return;
+  }
+  audio.pauseAll();
+  const result = await ads.showRewarded();
+  audio.resumeAll();
+  ui.coinsAdBusy = false;
+  ui.setCoinsAdBusy(false);
+  if (!result.reward) {
+    ui.toast('Реклама не досмотрена — монеты не начислены', 2600);
+    refreshAds();
+    return;
+  }
+  store.addCoins(ADS_COIN_PACK);
+  unlockAudio();
+  audio.play('buy');
+  ui.setCoins(store.coins);
+  ui.renderShop();
+  ui.renderMenu();
+  ui.toast(`+${ADS_COIN_PACK} монет за просмотр рекламы`);
+  refreshAds();
+}
+
+/** Ask the platform whether the rewarded button may be shown right now. */
+async function refreshAds() {
+  if (!ads.enabled) return;
+  if (!ads.rewardedSupported) {
+    ui.setAdsAvailable(false);
+    ui.setCoinsAdAvailable(false);
+    return;
+  }
+  const canShow = await ads.canShowRewarded();
   ui.setAdsAvailable(canShow);
+  ui.setCoinsAdAvailable(canShow);
 }
 
 /* ---------------------------------------------------------------- boosters */
@@ -834,11 +994,35 @@ function openLevelsBack() {
 function onAction(action, data = {}) {
   switch (action) {
     case 'play':
+      // The store build needs the network (ads), so it does not start offline.
+      if (window.__STORE__ && !net.online) {
+        ui.showOffline();
+        net.check().then((ok) => {
+          if (ok) ui.hideOffline();
+        });
+        break;
+      }
       unlockAudio();
       startLevel(store.unlocked);
       break;
     case 'levels':
       openLevels();
+      break;
+    case 'toggleAllWorlds':
+      ui.toggleAllWorlds();
+      audio.play('click');
+      break;
+    case 'completeClose':
+      returnToMenu();
+      break;
+    case 'resetProgress':
+      store.resetProgress();
+      resultScreenOpen = false;
+      ui.renderAll();
+      ui.setCoins(store.coins);
+      ui.toast('Прогресс стёрт — начинаем с первого уровня');
+      audio.play('click');
+      returnToMenu();
       break;
     case 'levelsBack':
       returnToMenu();
@@ -901,6 +1085,21 @@ function onAction(action, data = {}) {
       break;
     case 'buyAd':
       buyBoosterByAd(data.booster);
+      break;
+    case 'buyCoins':
+      buyCoinsByAd();
+      break;
+    case 'buyCoinsPack':
+      buyCoinsPack(data.product);
+      break;
+    case 'vkBuy':
+      buyViaVkPlay(data.product);
+      break;
+    case 'buyRemoveAds':
+      buyRemoveAds();
+      break;
+    case 'continueAd':
+      continueWithAd();
       break;
     case 'reset':
       ui.showConfirm();
@@ -990,7 +1189,7 @@ async function initServiceWorker() {
 
 // The PWA build keeps offline caching; the platform build drops it, because a
 // cache-first worker would serve moderators a stale build.
-if (!platform.enabled) window.addEventListener('load', initServiceWorker);
+if (!platform.enabled && !window.__STORE__ && !window.__VKPLAY__) window.addEventListener('load', initServiceWorker);
 window.addEventListener('beforeinstallprompt', (event) => {
   // Safari does not use this, but Chrome/Edge can offer an install prompt.
   event.preventDefault();
@@ -1021,6 +1220,103 @@ platform.onConflict = () => {
 };
 
 bootPlatform();
+
+/* Store build (Google Play): native ads + internet gate ------------------ */
+
+async function bootStoreBuild() {
+  if (!window.__STORE__) return;
+  await ads.init();
+  await iap.init();
+  ads.setRemoveAds(store.hasRemoveAds);
+  if (iap.ready) {
+    const owned = await iap.restore();
+    for (const purchase of owned) {
+      if (purchase?.productId === REMOVE_ADS_PRODUCT.id) {
+        store.grantPurchase(REMOVE_ADS_PRODUCT.id, purchase.purchaseId || '');
+      }
+    }
+    ads.setRemoveAds(store.hasRemoveAds);
+  }
+  await refreshAds();
+  net.onChange((online) => {
+    if (online) {
+      ui.hideOffline();
+    } else {
+      if (game && !resultScreenOpen) pauseGame();
+      ui.showOffline();
+    }
+  });
+  net.start();
+  const online = await net.check();
+  if (!online) ui.showOffline();
+}
+
+bootStoreBuild();
+
+/* VK Play: in-game purchases (browser build) ----------------------------- */
+
+async function bootVkPlay() {
+  if (window.__VKPLAY__ !== true) return;
+  // VK Play rejects projects with ad integrations: drop the rewarded block
+  // from the DOM entirely, not just hide it.
+  document.getElementById('shopCoinsAd')?.remove();
+  await vkplay.init();
+  if (!vkplay.available) {
+    console.info('[vkplay] payments are not configured — the shop stays hidden.');
+    return;
+  }
+  vkplay.onPaid = (productId) => {
+    const pack = COIN_PACKS.find((item) => item.id === productId);
+    if (!pack) return;
+    store.addCoins(pack.coins);
+    unlockAudio();
+    audio.play('buy');
+    ui.setCoins(store.coins);
+    ui.renderShop();
+    ui.renderMenu();
+    ui.toast(`+${pack.coins} монет`);
+  };
+  vkplay.onAuth = () => refreshVkPlayShop();
+  refreshVkPlayShop();
+}
+
+function refreshVkPlayShop() {
+  if (window.__VKPLAY__ !== true) return;
+  if (!vkplay.available) {
+    ui.renderCoinShop({});
+    return;
+  }
+  ui.renderCoinShop({
+    packs: COIN_PACKS.map((pack) => ({ id: pack.id, coins: pack.coins, price: pack.price })),
+    action: 'vkBuy',
+    hasRemoveAds: true,
+  });
+}
+
+async function buyViaVkPlay(productId) {
+  const result = await vkplay.buy(productId);
+  if (result.ok) {
+    ui.toast('Открываем окно оплаты…');
+    return;
+  }
+  if (result.reason === 'AUTH_REQUIRED') {
+    ui.toast('Войдите в аккаунт VK Play');
+    return;
+  }
+  if (result.reason === 'NOT_AVAILABLE') {
+    ui.toast('Оплата недоступна');
+    return;
+  }
+  ui.toast('Не удалось открыть оплату');
+}
+
+bootVkPlay();
+
+document.getElementById('btnOfflineRetry')?.addEventListener('click', async () => {
+  const online = await net.check();
+  if (online) ui.hideOffline();
+  else ui.toast('Интернет не появился — проверьте соединение', 2400);
+});
 
 /* Debug/QA hooks ------------------------------------------------------ */
 

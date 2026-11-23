@@ -23,6 +23,10 @@ export function createDefaultState() {
     currentLevel: 1,
     levels: {},
     settings: { sound: true, music: true, hintDismissed: false },
+    /** Non-consumable purchases: removeAds disables banner and interstitials. */
+    entitlements: { removeAds: false },
+    /** Processed purchase ids, so a repeated callback never pays twice. */
+    purchases: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -110,6 +114,11 @@ export class Store {
       state.settings.music = parsed.settings.music !== false;
       state.settings.hintDismissed = parsed.settings.hintDismissed === true;
     }
+
+    state.entitlements.removeAds = parsed.entitlements?.removeAds === true;
+    state.purchases = Array.isArray(parsed.purchases)
+      ? parsed.purchases.filter((id) => typeof id === 'string').slice(-200)
+      : [];
 
     if (parsed.levels && typeof parsed.levels === 'object') {
       const sourceToNew = new Map(LEVELS.map((level) => [level.seedId, level.id]));
@@ -238,6 +247,32 @@ export class Store {
     Object.assign(this.state.settings, patch);
     this.save();
     return this.state.settings;
+  }
+
+  /* ------------------------------------------------------------- purchases */
+
+  get hasRemoveAds() {
+    return this.state.entitlements.removeAds === true;
+  }
+
+  hasPurchase(productId) {
+    if (!productId) return false;
+    return this.state.purchases.includes(productId);
+  }
+
+  /**
+   * Records a purchase once. Returns false for a repeated callback or a
+   * purchase id that was already applied, so coins are never paid twice.
+   */
+  grantPurchase(productId, purchaseId = '') {
+    const key = purchaseId ? `${productId}:${purchaseId}` : productId;
+    if (this.state.purchases.includes(key)) return false;
+    if (productId === 'remove_ads' && this.hasRemoveAds) return false;
+    this.state.purchases.push(key);
+    if (this.state.purchases.length > 200) this.state.purchases.splice(0, this.state.purchases.length - 200);
+    if (productId === 'remove_ads') this.state.entitlements.removeAds = true;
+    this.save();
+    return true;
   }
 
   resetProgress() {

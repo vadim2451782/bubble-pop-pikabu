@@ -2,7 +2,7 @@
  * DOM presentation: screens, HUD, level map, shop, settings and toasts.
  * Game logic stays in Game; this module only reflects it.
  */
-import { BOOSTER_ORDER, BOOSTERS } from './config.js';
+import { ADS_COIN_PACK, BOOSTER_ORDER, BOOSTERS } from './config.js';
 import { LEVELS, LEVELS_PER_WORLD, WORLDS } from './levels.js';
 
 const $ = (id) => document.getElementById(id);
@@ -24,6 +24,10 @@ export class UI {
     /** Rewarded ad button is shown only when the platform reports it usable. */
     this.adsAvailable = false;
     this.adsBusy = false;
+    this.coinsAdAvailable = false;
+    this.coinsAdBusy = false;
+    /** Level map: show only ten worlds unless the player expands it. */
+    this.showAllWorlds = false;
 
     this.el = {
       gameUi: $('gameUi'),
@@ -42,6 +46,8 @@ export class UI {
       cancelBooster: $('btnCancelBooster'),
       toast: $('toast'),
       levelGrid: $('levelGrid'),
+      completeStars: $('completeStars'),
+      completeCoins: $('completeCoins'),
       levelsProgressFill: $('levelsProgressFill'),
       levelsProgressText: $('levelsProgressText'),
       shopList: $('shopList'),
@@ -66,6 +72,14 @@ export class UI {
       toggleMusic: $('toggleMusic'),
       confirmReset: $('confirmReset'),
       offlineStatus: $('offlineStatus'),
+      offlineGate: $('offlineGate'),
+      btnOfflineRetry: $('btnOfflineRetry'),
+      shopCoinsAd: $('shopCoinsAd'),
+      coinsShop: $('coinsShop'),
+      coinsRow: $('coinsRow'),
+      btnRemoveAds: $('btnRemoveAds'),
+      adBanner: $('adBanner'),
+      btnContinueAd: $('btnContinueAd'),
     };
 
     this.bind();
@@ -216,6 +230,17 @@ export class UI {
 
   renderLevels() {
     const currentLevel = Math.min(LEVELS.length, this.store.unlocked);
+    const currentWorld = Math.floor((currentLevel - 1) / LEVELS_PER_WORLD);
+    // The map shows a window of ten worlds: the player's current block plus the
+    // next one as a dimmed teaser. Older worlds stay reachable through the
+    // "show all" toggle.
+    const VISIBLE_WORLDS = 10;
+    const firstWorld = this.showAllWorlds
+      ? 0
+      : Math.max(0, currentWorld - (VISIBLE_WORLDS - 1));
+    const lastWorld = this.showAllWorlds
+      ? WORLDS.length - 1
+      : Math.min(WORLDS.length - 1, currentWorld + 1);
     const worlds = [];
     let completed = 0;
 
@@ -223,21 +248,29 @@ export class UI {
       const start = w * LEVELS_PER_WORLD + 1;
       if (start > LEVELS.length) break;
       const end = Math.min(LEVELS.length, start + LEVELS_PER_WORLD - 1);
-      const world = WORLDS[w];
       let worldDone = 0;
       let worldStars = 0;
       const tiles = [];
 
       for (let id = start; id <= end; id += 1) {
-        const level = LEVELS[id - 1];
-        const unlocked = id <= this.store.unlocked;
         const rec = this.store.getLevelRecord(id);
         if (rec.stars > 0) {
           worldDone += 1;
-          completed += 1;
+          if (w >= firstWorld && w <= lastWorld) completed += 1;
         }
         worldStars += rec.stars;
+      }
+      this.worldProgress = this.worldProgress || [];
+      this.worldProgress[w] = { done: worldDone, stars: worldStars, total: end - start + 1 };
 
+      if (w < firstWorld || w > lastWorld) continue;
+
+      const world = WORLDS[w];
+      const isPreview = w > currentWorld;
+      for (let id = start; id <= end; id += 1) {
+        const level = LEVELS[id - 1];
+        const unlocked = id <= this.store.unlocked;
+        const rec = this.store.getLevelRecord(id);
         const classes = ['level-tile'];
         if (!unlocked) classes.push('is-locked');
         if (rec.stars > 0) classes.push('is-done');
@@ -257,8 +290,9 @@ export class UI {
 
       const worldUnlocked = start <= this.store.unlocked;
       const isCurrentWorld = currentLevel >= start && currentLevel <= end;
+      const previewTiles = Array.from({ length: end - start + 1 }, () => '<span class="level-tile level-tile--dim" aria-hidden="true">?</span>').join('');
       worlds.push(`
-        <section class="level-world${worldUnlocked ? '' : ' is-locked'}${isCurrentWorld ? ' is-current' : ''}"
+        <section class="level-world${worldUnlocked ? '' : ' is-locked'}${isCurrentWorld ? ' is-current' : ''}${isPreview ? ' is-preview' : ''}"
           style="--world-tint:${world.tint};--world-glow:${world.glow}">
           <header class="level-world__head">
             <span class="level-world__emoji" aria-hidden="true">
@@ -266,28 +300,43 @@ export class UI {
             </span>
             <div class="level-world__title">
               <h3>${world.name}</h3>
-              <small>${worldDone} из ${end - start + 1} · ★ ${worldStars}</small>
+              <small>${isPreview ? 'откроется после текущего мира' : `${worldDone} из ${end - start + 1} · ★ ${worldStars}`}</small>
             </div>
-            ${worldUnlocked ? '' : '<span class="level-world__lock"><svg class="icon"><use href="#i-lock"></use></svg></span>'}
+            ${worldUnlocked && !isPreview ? '' : '<span class="level-world__lock"><svg class="icon"><use href="#i-lock"></use></svg></span>'}
           </header>
-          <div class="level-world__grid">${tiles.join('')}</div>
+          <div class="level-world__grid">${isPreview ? previewTiles : tiles.join('')}</div>
         </section>`);
     }
 
-    this.el.levelGrid.innerHTML = worlds.join('');
+    const moreLabel = this.showAllWorlds ? 'Свернуть до 10 миров' : 'Показать все миры';
+    const more = WORLDS.length > VISIBLE_WORLDS
+      ? `<button class="level-more" type="button" data-action="toggleAllWorlds">${moreLabel}</button>`
+      : '';
+    this.el.levelGrid.innerHTML = `${more}${worlds.join('')}`;
     const percent = Math.round((completed / LEVELS.length) * 100);
     this.el.levelsProgressFill.style.width = `${percent}%`;
     this.el.levelsProgressText.textContent = `${completed} из ${LEVELS.length} уровней`;
 
-    // Open the map at the player's current level, not at the first world.
-    requestAnimationFrame(() => {
-      const current = this.el.levelGrid.querySelector('.level-tile.is-current');
-      if (!current) return;
-      const tileRect = current.getBoundingClientRect();
-      const gridRect = this.el.levelGrid.getBoundingClientRect();
-      const delta = (tileRect.top + tileRect.height / 2) - (gridRect.top + gridRect.height / 2);
-      this.el.levelGrid.scrollTop += delta;
-    });
+    // Open the map at the first uncompleted level once the screen is visible.
+    requestAnimationFrame(() => this.scrollLevelsToCurrent());
+  }
+
+  scrollLevelsToCurrent() {
+    const grid = this.el.levelGrid;
+    if (!grid || !grid.clientHeight) return;
+    const current = grid.querySelector('.level-tile.is-current');
+    if (!current) {
+      grid.scrollTop = 0;
+      return;
+    }
+    const gridRect = grid.getBoundingClientRect();
+    const tileRect = current.getBoundingClientRect();
+    grid.scrollTop += tileRect.top - gridRect.top - (gridRect.height - tileRect.height) / 2;
+  }
+
+  toggleAllWorlds() {
+    this.showAllWorlds = !this.showAllWorlds;
+    this.renderLevels();
   }
 
   renderShop() {
@@ -331,6 +380,66 @@ export class UI {
     if (next === this.adsAvailable) return;
     this.adsAvailable = next;
     if (this.currentScreen === 'shop') this.renderShop();
+  }
+
+  /** "+N монет за рекламу" row in the shop (store builds only). */
+  setCoinsAdAvailable(value) {
+    this.coinsAdAvailable = Boolean(value);
+    const amount = $('shopCoinsAdAmount');
+    if (amount) amount.textContent = `+${ADS_COIN_PACK} монет`;
+    if (this.el.shopCoinsAd) this.el.shopCoinsAd.hidden = !this.coinsAdAvailable;
+  }
+
+  setCoinsAdBusy(value) {
+    if (!this.el.shopCoinsAd) return;
+    this.el.shopCoinsAd.disabled = Boolean(value);
+  }
+
+  showOffline() {
+    if (!this.el.offlineGate) return;
+    this.el.offlineGate.hidden = false;
+  }
+
+  hideOffline() {
+    if (!this.el.offlineGate) return;
+    this.el.offlineGate.hidden = true;
+  }
+
+  /* ----------------------------------------------------------- coin shop */
+
+  /** Coin packs and the "remove ads" product, prices from the store bridge. */
+  renderCoinShop({ packs = [], hasRemoveAds = false, removeAdsPrice = '', action = 'buyCoinsPack' } = {}) {
+    if (!this.el.coinsRow || !this.el.coinsShop) return;
+    this.el.coinsShop.hidden = packs.length === 0;
+    this.el.coinsRow.innerHTML = packs
+      .map(
+        (pack) => `<button class="coin-pack" type="button" data-action="${action}" data-product="${pack.id}">
+          <b>${pack.coins} шт</b><small>${pack.price}</small>
+        </button>`,
+      )
+      .join('');
+    const showRemove = !hasRemoveAds && Boolean(removeAdsPrice);
+    this.el.btnRemoveAds.hidden = !showRemove;
+    this.el.btnRemoveAds.textContent = showRemove ? `Убрать рекламу · ${removeAdsPrice}` : '';
+    this.el.btnRemoveAds.dataset.action = 'buyRemoveAds';
+  }
+
+  setBannerSlot(visible) {
+    if (!this.el.adBanner) return;
+    this.el.adBanner.hidden = !visible;
+  }
+
+  bannerRect() {
+    if (!this.el.adBanner) return null;
+    const rect = this.el.adBanner.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+  }
+
+  setContinueAdVisible(visible) {
+    if (!this.el.btnContinueAd) return;
+    this.el.btnContinueAd.hidden = !visible;
+    this.el.btnContinueAd.disabled = false;
   }
 
   setAdsBusy(value) {
@@ -419,6 +528,15 @@ export class UI {
         this.el.winStars.dataset.stars = String(stars);
       });
     });
+  }
+
+  /** The very last level is cleared: a separate celebration, not the win card. */
+  showComplete({ stars, coins }) {
+    this.renderMenu();
+    this.renderLevels();
+    this.el.completeStars.textContent = `${stars}`;
+    this.el.completeCoins.textContent = `${coins}`;
+    this.showScreen('complete');
   }
 
   showLose({ game, reason, coins = 0 }) {

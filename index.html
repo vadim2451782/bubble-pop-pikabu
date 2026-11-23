@@ -160,7 +160,7 @@
         </div>
 
         <footer class="menu-foot">
-          <span>100 уровней · 4 бустера</span>
+          <span>1000 уровней · 4 бустера</span>
         </footer>
       </section>
 
@@ -174,10 +174,10 @@
         </header>
         <div class="level-summary">
           <div class="level-summary__bar"><i id="levelsProgressFill"></i></div>
-          <span id="levelsProgressText">0 из 100 уровней</span>
+          <span id="levelsProgressText">0 из 1000 уровней</span>
         </div>
         <div class="level-grid" id="levelGrid"></div>
-        <p class="screen-note">10 миров по 10 уровней. Проходите уровни и собирайте звёзды!</p>
+        <p class="screen-note">100 миров по 10 уровней — больше тысячи головоломок. Проходите уровни и собирайте звёзды!</p>
       </section>
 
       <section class="screen screen--meta" data-screen="shop">
@@ -191,7 +191,17 @@
           </div>
         </header>
         <p class="shop-sub">Бустеры помогают на сложных уровнях. Монеты: 1 за каждые 4 лопнутых шарика плюс бонус за победу.</p>
+        <section class="coins-shop" id="coinsShop" hidden>
+          <h3>Монеты</h3>
+          <div class="coins-row" id="coinsRow"></div>
+          <button class="shop-remove-ads" id="btnRemoveAds" type="button" hidden></button>
+        </section>
+        <button class="shop-coins-ad" id="shopCoinsAd" data-action="buyCoins" type="button" hidden>
+          <svg class="icon"><use href="#i-play"></use></svg>
+          <span>Посмотреть рекламу и получить <b id="shopCoinsAdAmount">+15 монет</b></span>
+        </button>
         <div class="shop-list" id="shopList"></div>
+        <div class="ad-banner" id="adBanner" hidden></div>
         <p class="screen-note">Купленные бустеры хранятся в инвентаре и доступны на игровом поле.</p>
       </section>
 
@@ -259,6 +269,29 @@
         </div>
       </section>
 
+      <section class="screen screen--modal" data-screen="complete">
+        <div class="card modal-card modal-card--complete">
+          <div class="result-badge result-badge--win">
+            <svg class="icon"><use href="#i-trophy"></use></svg>
+          </div>
+          <p class="modal-kicker">1000 из 1000</p>
+          <h2>Вы прошли игру!</h2>
+          <p class="modal-text">
+            Поздравляем — все 100 миров и 1000 уровней позади. Спасибо, что дошли до конца!
+          </p>
+          <div class="result-grid">
+            <div><small>Звёзды</small><b id="completeStars">0</b></div>
+            <div><small>Монеты</small><b id="completeCoins">0</b></div>
+            <div><small>Миров</small><b>100</b></div>
+          </div>
+          <button class="btn btn--primary" data-action="completeClose" type="button">Играть ещё</button>
+          <div class="modal-row">
+            <button class="btn btn--ghost" data-action="levels" type="button">Карта</button>
+            <button class="btn btn--ghost" data-action="resetProgress" type="button">Стереть прогресс</button>
+          </div>
+        </div>
+      </section>
+
       <section class="screen screen--modal" data-screen="lose">
         <div class="card modal-card">
           <div class="result-badge result-badge--lose">
@@ -271,6 +304,10 @@
             <div><small>Монеты</small><b id="loseCoins">0</b></div>
             <div><small>Осталось</small><b id="loseLeft">0</b></div>
           </div>
+          <button class="btn btn--ad" id="btnContinueAd" data-action="continueAd" type="button" hidden>
+            <svg class="icon"><use href="#i-play"></use></svg>
+            <span>+5 шаров за рекламу</span>
+          </button>
           <button class="btn btn--primary" data-action="retry" type="button">Ещё раз</button>
           <div class="modal-row">
             <button class="btn btn--ghost" data-action="loseShop" type="button">Бустеры</button>
@@ -282,6 +319,14 @@
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <div class="offline-gate" id="offlineGate" hidden>
+      <div class="offline-card">
+        <b>Нет подключения к интернету</b>
+        <p>Игра подгружает рекламу, поэтому без сети не запускается. Проверьте мобильную сеть или Wi-Fi и попробуйте ещё раз.</p>
+        <button class="btn btn--primary" id="btnOfflineRetry" type="button">Проверить снова</button>
+      </div>
+    </div>
 
     <div class="rotate-overlay" id="rotateOverlay">
       <div class="rotate-card">

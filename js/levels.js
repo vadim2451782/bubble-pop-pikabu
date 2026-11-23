@@ -10,9 +10,11 @@ import { SOLVE_TURNS } from './level-audit.js';
 const ROW_WIDTH = (r) => (r % 2 === 0 ? COLS : COLS - 1);
 const MID = (w) => (w - 1) / 2;
 
-/** Ten themed worlds of ten levels each, used by the level map. */
+/** Ten themed worlds of ten levels each are repeated as chapters: 100 worlds,
+ *  1000 levels in total. Level map groups them by world. */
 export const LEVELS_PER_WORLD = 10;
-export const WORLDS = [
+
+const BASE_WORLDS = [
   { name: 'Карамельная бухта', icon: 'i-world-sweet', tint: 'rgba(255, 143, 177, 0.16)', glow: 'rgba(255, 143, 177, 0.42)' },
   { name: 'Мыльная роща', icon: 'i-world-bubble', tint: 'rgba(126, 231, 200, 0.14)', glow: 'rgba(126, 231, 200, 0.4)' },
   { name: 'Радужные горы', icon: 'i-rainbow', tint: 'rgba(178, 141, 255, 0.16)', glow: 'rgba(178, 141, 255, 0.42)' },
@@ -24,6 +26,17 @@ export const WORLDS = [
   { name: 'Облачный край', icon: 'i-world-cloud', tint: 'rgba(165, 180, 252, 0.16)', glow: 'rgba(165, 180, 252, 0.42)' },
   { name: 'Звёздная фиеста', icon: 'i-world-party', tint: 'rgba(255, 224, 102, 0.15)', glow: 'rgba(255, 224, 102, 0.45)' },
 ];
+
+const WORLD_COUNT = Math.ceil(MAX_LEVEL / LEVELS_PER_WORLD);
+
+export const WORLDS = Array.from({ length: WORLD_COUNT }, (_, chapter) => {
+  const base = BASE_WORLDS[chapter % BASE_WORLDS.length];
+  const cycle = Math.floor(chapter / BASE_WORLDS.length);
+  return {
+    ...base,
+    name: cycle === 0 ? base.name : `${base.name} · ${cycle + 1}`,
+  };
+});
 
 /* ------------------------------------------------------------------ shapes */
 
@@ -183,16 +196,19 @@ const LATE_SHAPES = [
 ];
 const LATE_STYLES = ['groups', 'checker', 'diagonal', 'vertical', 'rings', 'mosaic', 'spiral', 'waves'];
 
-for (let i = SPECS.length; i < 100; i += 1) {
-  const world = Math.floor(i / 10);
-  const within = i % 10;
+// The rest of the catalogue continues the themed chapters up to MAX_LEVEL.
+// Rows, colours and the shot budget grow slowly, shapes and colour styles
+// rotate, so a thousand levels do not repeat the same board twice in a row.
+for (let i = SPECS.length; i < MAX_LEVEL; i += 1) {
+  const world = Math.floor(i / LEVELS_PER_WORLD);
+  const within = i % LEVELS_PER_WORLD;
   SPECS.push({
-    name: `${WORLDS[world].name} ${i + 1}`,
-    rows: Math.min(10, 6 + Math.floor(world / 3) + (within % 2)),
-    colors: Math.min(6, 4 + Math.floor(world / 4)),
-    shape: LATE_SHAPES[(i * 3 + world) % LATE_SHAPES.length],
-    style: LATE_STYLES[(i + within) % LATE_STYLES.length],
-    shots: 34 + Math.floor(world * 1.2) + Math.floor(within / 2),
+    name: `${WORLDS[world].name} · ${within + 1}`,
+    rows: Math.min(10, 4 + Math.floor((i / 8) % 7)),
+    colors: Math.min(6, 3 + Math.floor((i / 16) % 4)),
+    shape: LATE_SHAPES[(i * 7 + world) % LATE_SHAPES.length],
+    style: LATE_STYLES[(i + within * 3) % LATE_STYLES.length],
+    shots: 34 + Math.floor(i / 25) + Math.floor(within / 2),
   });
 }
 
@@ -200,38 +216,47 @@ function buildLevel(spec, index) {
   const id = index + 1;
   const seedId = spec.seedId ?? id;
   const seed = seedId * 7919 + 12345;
-  const shape = SHAPES[spec.shape] || SHAPES.full;
   const colorOf = COLOR_STYLES[spec.style] || COLOR_STYLES.checker;
 
-  const raw = [];
-  for (let r = 0; r < spec.rows; r += 1) {
-    const w = ROW_WIDTH(r);
-    let row = '';
-    for (let c = 0; c < w; c += 1) {
-      if (!shape(r, c, w, spec.rows)) {
-        row += '.';
-        continue;
+  const paint = (shapeName, rowCount) => {
+    const shape = SHAPES[shapeName] || SHAPES.full;
+    const raw = [];
+    for (let r = 0; r < rowCount; r += 1) {
+      const w = ROW_WIDTH(r);
+      let row = '';
+      for (let c = 0; c < w; c += 1) {
+        if (!shape(r, c, w, rowCount)) {
+          row += '.';
+          continue;
+        }
+        const idx = ((colorOf(r, c, spec.colors, seed) % spec.colors) + spec.colors) % spec.colors;
+        row += String(idx + 1);
       }
-      const idx = ((colorOf(r, c, spec.colors, seed) % spec.colors) + spec.colors) % spec.colors;
-      row += String(idx + 1);
+      raw.push(row);
     }
-    raw.push(row);
+    const connected = connectPattern(raw);
+    const rows = connected.map((row) =>
+      row
+        .map((colorId) => {
+          if (!colorId) return '.';
+          return String(COLORS.findIndex((c) => c.id === colorId) + 1);
+        })
+        .join(''),
+    );
+    while (rows.length && ![...rows[rows.length - 1]].some((ch) => ch !== '.')) {
+      rows.pop();
+    }
+    const bubbles = rows.reduce((n, row) => n + [...row].filter((ch) => ch !== '.').length, 0);
+    return { rows, bubbles };
+  };
+
+  let { rows, bubbles: totalBubbles } = paint(spec.shape, spec.rows);
+  // A few sparse shapes collapse to a handful of bubbles; those boards are not
+  // playable, so fall back to a dense board with the same colours and seed.
+  if (totalBubbles < 30) {
+    ({ rows, bubbles: totalBubbles } = paint('full', Math.max(5, spec.rows)));
   }
 
-  const connected = connectPattern(raw);
-  const rows = connected.map((row) =>
-    row
-      .map((colorId) => {
-        if (!colorId) return '.';
-        return String(COLORS.findIndex((c) => c.id === colorId) + 1);
-      })
-      .join(''),
-  );
-  while (rows.length && ![...rows[rows.length - 1]].some((ch) => ch !== '.')) {
-    rows.pop();
-  }
-
-  const totalBubbles = rows.reduce((n, row) => n + [...row].filter((ch) => ch !== '.').length, 0);
   const shots = Math.max(spec.shots, Math.ceil(totalBubbles * 0.7) + 30);
   const palette = COLORS.slice(0, spec.colors).map((c) => c.id);
 
@@ -271,11 +296,11 @@ const RANKED = DRAFT.map((level, index) => ({
 }))
   .sort((a, b) => a.difficulty - b.difficulty || a.spec.seedId - b.spec.seedId)
   .map((entry, index) => {
-    const world = Math.floor(index / 10);
+    const world = Math.floor(index / LEVELS_PER_WORLD);
     return {
       ...entry.spec,
       seedId: entry.spec.seedId,
-      finalName: `${WORLDS[world].name} ${index + 1}`,
+      finalName: `${WORLDS[world].name} · ${(index % LEVELS_PER_WORLD) + 1}`,
       difficulty: Math.round(entry.difficulty * 100) / 100,
     };
   });
